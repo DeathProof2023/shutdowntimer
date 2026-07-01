@@ -2,6 +2,81 @@
 # Beide Dateien im selben Ordner lassen, dann BAT per Doppelklick starten.
 
 # ===========================================================================
+# VERSION & UPDATE
+# ===========================================================================
+$SCRIPT_VERSION = "1.3"
+$UPDATE_URL     = "https://raw.githubusercontent.com/DeathProof2023/shutdowntimer/refs/heads/main/Shutdown-Timer.ps1"
+
+function Invoke-UpdateCheck {
+    Write-Host ""
+    Write-Host "  Suche nach Updates..." -ForegroundColor DarkGray -NoNewline
+
+    try {
+        $web          = New-Object System.Net.WebClient
+        $web.Encoding = [System.Text.Encoding]::UTF8
+        $remote       = $web.DownloadString($UPDATE_URL)
+
+        # Versionsnummer aus dem Remote-Skript lesen
+        $pattern   = [regex]'\$SCRIPT_VERSION\s*=\s*"([\d\.]+)"'
+        $match     = $pattern.Match($remote)
+        if (-not $match.Success) {
+            Write-Host " Versionsinfo nicht lesbar." -ForegroundColor DarkYellow
+            Start-Sleep -Milliseconds 1200
+            return
+        }
+        $remoteVer = $match.Groups[1].Value
+
+        # Versionsvergleich (korrekt: 1.10 > 1.9)
+        $local  = [System.Version]$SCRIPT_VERSION
+        $latest = [System.Version]$remoteVer
+
+        if ($latest -le $local) {
+            Write-Host " Aktuell (v$SCRIPT_VERSION)" -ForegroundColor Green
+            Start-Sleep -Milliseconds 800
+            return
+        }
+
+        # Neue Version verfuegbar
+        Write-Host ""
+        Write-Host ""
+        Write-Host "  ====================================================" -ForegroundColor Yellow
+        Write-Host "  Neue Version: v$remoteVer  (installiert: v$SCRIPT_VERSION)" -ForegroundColor Yellow
+        Write-Host "  ====================================================" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  [U]  Jetzt aktualisieren und neu starten" -ForegroundColor Cyan
+        Write-Host "  [ENTER]  Ueberspringen" -ForegroundColor DarkGray
+        Write-Host ""
+        $choice = (Read-Host "  Auswahl").ToUpper().Trim()
+        if ($choice -ne "U") { return }
+
+        # Pfad dieser Skriptdatei ermitteln
+        $selfPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.ScriptName }
+        if (-not $selfPath -or -not (Test-Path $selfPath)) {
+            Write-Host "  FEHLER: Skriptpfad nicht ermittelbar." -ForegroundColor Red
+            Start-Sleep -Seconds 2
+            return
+        }
+        $backupPath = $selfPath -replace '\.ps1$', "_v${SCRIPT_VERSION}_backup.ps1"
+
+        Write-Host ""
+        Write-Host "  Sicherungskopie wird erstellt..." -ForegroundColor DarkGray
+        Copy-Item -Path $selfPath -Destination $backupPath -Force
+
+        Write-Host "  Lade v$remoteVer herunter..." -ForegroundColor Cyan
+        $web.DownloadFile($UPDATE_URL, $selfPath)
+
+        Write-Host "  Update erfolgreich! Neustart..." -ForegroundColor Green
+        Start-Sleep -Seconds 2
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$selfPath"
+        exit
+
+    } catch {
+        Write-Host " Fehler: $($_.Exception.Message)" -ForegroundColor Red
+        Start-Sleep -Seconds 2
+    }
+}
+
+# ===========================================================================
 # LIVE-STATS RUNSPACE  (laeuft im Hintergrund waehrend manueller Eingabe)
 # ===========================================================================
 function Start-LiveStats {
@@ -458,6 +533,9 @@ function Read-Number {
 # ===========================================================================
 # HAUPTSCHLEIFE
 # ===========================================================================
+# Update-Pruefung beim Start
+Invoke-UpdateCheck
+
 do {
     Show-Menu
     $wahl = Read-Host "  Auswahl"
